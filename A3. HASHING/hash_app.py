@@ -4,7 +4,7 @@ import sys
 
 def get_bucket_filename(base_name, overflow_index):
     """Generate a bucket file name with overflow handling."""
-    return f"{base_name}_{overflow_index}.txt" if overflow_index > 0 else f"{base_name}.txt"
+    return f"{base_name}_overflow_{overflow_index}.txt" if overflow_index > 0 else f"{base_name}.txt"
 
 def find_last_overflow_file(base_name):
     """Find the last overflow file for a given base name."""
@@ -18,9 +18,18 @@ def write_to_bucket(bucket_num, text, max_size):
     base_name = str(bucket_num)
     filename = find_last_overflow_file(base_name)
     
-    if os.path.exists(filename) and os.path.getsize(filename) >= max_size:
-        overflow_index = int(filename.split("_")[-1].split(".")[0]) + 1 if "_" in filename else 1
-        filename = get_bucket_filename(base_name, overflow_index)
+    while True:
+        if os.path.exists(filename):
+            with open(filename, "r") as f:
+                current_size = len(f.read())
+        else:
+            current_size = 0
+        
+        if current_size + len(text) > max_size:
+            overflow_index = int(filename.split("_overflow_")[-1].split(".")[0]) + 1 if "_overflow_" in filename else 1
+            filename = get_bucket_filename(base_name, overflow_index)
+        else:
+            break
     
     with open(filename, "a") as f:
         f.write(text + "\n")
@@ -28,7 +37,7 @@ def write_to_bucket(bucket_num, text, max_size):
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python hash.py <n> <s>")
+        print("Usage: python hash_app.py <n> <s>")
         sys.exit(1)
     
     n = int(sys.argv[1])
@@ -36,13 +45,26 @@ def main():
     
     try:
         while True:
-            text = input("Please enter the string: ").strip()
-            if not text:
-                continue
-            
-            hash_value = xxhash.xxh32(text).intdigest()
-            bucket_num = (hash_value % n) + 1  # Buckets are 1-indexed
-            write_to_bucket(bucket_num, text, s)
+            try:
+                text = input("Please enter the string: ").strip()
+                if not text:
+                    continue
+                
+                if len(text) > s:
+                    print(f"Error: Input length ({len(text)}) exceeds max bucket size ({s}). Moving to an overflow file.")
+                    hash_value = xxhash.xxh32(text).intdigest()
+                    bucket_num = (hash_value % n) + 1
+                    filename = get_bucket_filename(str(bucket_num), 1)
+                    with open(filename, "a") as f:
+                        f.write(text + "\n")
+                    print(f"{text} added to {filename}")
+                    continue
+                
+                hash_value = xxhash.xxh32(text).intdigest()
+                bucket_num = (hash_value % n) + 1  # Buckets are 1-indexed
+                write_to_bucket(bucket_num, text, s)
+            except Exception as e:
+                print(f"An error occurred: {e}")
     except KeyboardInterrupt:
         print("\nExiting...")
 
